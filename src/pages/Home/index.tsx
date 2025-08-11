@@ -3,19 +3,28 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import axios from "axios"; // 导入axios
 
-const initMusicList = [
+const musicList = [
+  { id: "1", name: "稻香", author: "周杰伦", src: "./music/daoxiang.mp3" },
+  { id: "2", name: "黑夜", author: "陈粒", src: "./music/heiye.mp3" },
+  { id: "3", name: "小半", author: "陈粒", src: "./music/xiaoban.mp3" },
   {
-    id: "1",
-    name: "稻香",
-    author: "周杰伦",
-    src: "https://suminhan.cn/music/daoxiang.mp3",
-  },
-  { id: "2", name: "小半", author: "陈粒", src: "/music/xiaoban.mp3" },
-  {
-    id: "3",
+    id: "4",
     name: "给电影人的情书",
     author: "蔡琴",
-    src: "/music/geidianyingrendeqingshu.mp3",
+    src: "./music/geidianyingrendeqingshu.mp3",
+  },
+  { id: "5", name: "雨天", author: "孙燕姿", src: "./music/yutian.mp3" },
+  {
+    id: "6",
+    name: "AngelLove",
+    author: "黄明昊",
+    src: "./music/AngelLove.mp3",
+  },
+  {
+    id: "7",
+    name: "桜+OK绷",
+    author: "麦吉_Maggie",
+    src: "./music/桜+OK绷.mp3",
   },
 ];
 const AudioParticleVisualizer = () => {
@@ -27,31 +36,6 @@ const AudioParticleVisualizer = () => {
   const animationFrameRef = useRef<number | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [alertMsg, setAlertMsg] = useState<string>("");
-  // 添加musicList状态
-  const [musicList, setMusicList] = useState<
-    Array<{ id: string; name: string; author: string; src: string }>
-  >([]);
-
-  // 从远端获取音乐列表数据
-  useEffect(() => {
-    const fetchMusicList = async () => {
-      try {
-        // 替换为实际的API地址
-        const response = await axios.get("./data.json");
-        if (response.data && Array.isArray(response.data)) {
-          setMusicList(response.data);
-        } else {
-          setMusicList(initMusicList);
-        }
-      } catch (error) {
-        console.error("获取音乐列表失败:", error);
-        // 设置默认音乐列表作为后备
-        setMusicList(initMusicList);
-      }
-    };
-
-    fetchMusicList();
-  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
