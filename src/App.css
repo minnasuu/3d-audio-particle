@@ -1,13 +1,93 @@
-#root {
+body{
   width: 100%;
-  height: 100%;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
   background-color: #000;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+#root{
+  width: 100%;
+  height: 100%;
+  line-height: 1.5rem;
+  font-family: "Wotfard","Wotfard-fallback",sans-serif;
+  background-color: #000;
+}
+
+/* 闪烁光标动画 */
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
   }
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
+@keyframes scaleIn {
+  from { transform: scale(0.8); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.file-input{
+  background-color: rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding-inline: 12px;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  width: fit-content;
+  height: fit-content;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  input{
+    opacity: 0;
+    width: 0;
+    color: var(--color-text-4);
+  }
+}
+
+input.text-input{
+  height: 20px;
+  background-color: transparent;
+  border: none;
+  outline: none;
+  width: 80px;
+  color: rgba(255,255,255,0.5);
+  &:focus,
+  &:focus-within,
+  &:focus-visible{
+    border: none;
+    outline: none;
+  }
+}
+
+.check-button{
+ height: 16px; 
+ cursor: pointer;
+}
+.colorWhite{
+  color: white;
+}
+.loading{
+  width: 32px;
+  aspect-ratio: 1;
+  --_g: no-repeat radial-gradient(farthest-side,rgba(255,255,255) 94%,rgba(255,255,255,0));
+  background:
+    var(--_g) 0    0,
+    var(--_g) 100% 0,
+    var(--_g) 100% 100%,
+    var(--_g) 0    100%;
+  background-size: 40% 40%;
+  animation: l38 .5s infinite; 
+}
+@keyframes l38 {
+  100% {background-position: 100% 0,100% 100%,0 100%,0 0}
+}

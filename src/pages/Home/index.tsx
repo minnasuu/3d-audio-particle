@@ -1,306 +1,372 @@
-import {useEffect, useRef, useState} from "react";
+//@ts-nocheck
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import AudioInput from "./AudioInput";
+import axios from "axios"; // 导入axios
 
-const Home = () => {
-    const [audioUrl, setAudioUrl] = useState<string>('');
-    const [pause, setPause] = useState<boolean>(false);
-    const [input, setInput] = useState<string>('');
-    const containerRef = useRef<HTMLDivElement>(null);
-    const audioElementRef = useRef<HTMLAudioElement | null>(null);
-    const animationFrameRef = useRef<number | null>(null);
-    const uploadedObjectUrlRef = useRef<string | null>(null);
-    const audioContextRef = useRef<AudioContext | null>(null);
+const initMusicList = [
+  {
+    id: "1",
+    name: "稻香",
+    author: "周杰伦",
+    src: "https://suminhan.cn/music/daoxiang.mp3",
+  },
+  { id: "2", name: "小半", author: "陈粒", src: "/music/xiaoban.mp3" },
+  {
+    id: "3",
+    name: "给电影人的情书",
+    author: "蔡琴",
+    src: "/music/geidianyingrendeqingshu.mp3",
+  },
+];
+const AudioParticleVisualizer = () => {
+  const [audioUrl, setAudioUrl] = useState<string>("");
+  const [pause, setPause] = useState<boolean>(false);
+  // const [input, setInput] = useState<string>('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [alertMsg, setAlertMsg] = useState<string>("");
+  // 添加musicList状态
+  const [musicList, setMusicList] = useState<
+    Array<{ id: string; name: string; author: string; src: string }>
+  >([]);
 
-    // 初始化全局 AudioContext（仅一次），组件卸载时销毁
-    useEffect(() => {
-      const AudioContextClass =
-        window.AudioContext || (window as any).webkitAudioContext;
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContextClass();
-      }
-      return () => {
-        if (audioContextRef.current) {
-          audioContextRef.current.close();
-          audioContextRef.current = null;
-        }
-      };
-    }, []);
-
-    useEffect(() => {
-      if (!containerRef.current) return;
-
-      // 初始化Three.js场景
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(
-        75,
-        window.innerWidth / window.innerHeight,
-        0.1,
-        1000
-      );
-      camera.position.z = 11;
-      const renderer = new THREE.WebGLRenderer({ antialias: true });
-      // 初始化渲染尺寸与像素比，使用容器尺寸更精确
-      if (containerRef.current) {
-        const initialWidth = containerRef.current.clientWidth;
-        const initialHeight = containerRef.current.clientHeight;
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-        renderer.setSize(initialWidth, initialHeight);
-        camera.aspect = initialWidth / initialHeight;
-        camera.updateProjectionMatrix();
-      } else {
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      }
-      renderer.setClearColor(0x000);
-      containerRef.current.appendChild(renderer.domElement);
-
-      // 监听窗口尺寸变化，更新相机与渲染器
-      const handleResize = () => {
-        if (!containerRef.current) return;
-        const width = containerRef.current.clientWidth;
-        const height = containerRef.current.clientHeight;
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        renderer.setSize(width, height);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      };
-      window.addEventListener("resize", handleResize);
-
-      // 创建粒子系统
-      const particleCount = 18000;
-      const particles = new THREE.BufferGeometry();
-      const positions = new Float32Array(particleCount * 3);
-      const sizes = new Float32Array(particleCount);
-
-      // 初始化粒子位置和大小
-      const radius = 24;
-      for (let i = 0; i < particleCount; i++) {
-        const angle = i * (1 / 180) * Math.PI * 2;
-        const distance = Math.ceil(i / 180) * 0.005 * radius;
-
-        positions[i * 3] = Math.cos(angle) * distance;
-        positions[i * 3 + 1] = -4;
-        positions[i * 3 + 2] = Math.sin(angle) * distance;
-
-        sizes[i] = 2 * (1 - distance / radius);
-      }
-
-      particles.setAttribute(
-        "position",
-        new THREE.BufferAttribute(positions, 3)
-      );
-      particles.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
-
-      const particleMaterial = new THREE.PointsMaterial({
-        color: 0xcccccc,
-        size: 0.05,
-        sizeAttenuation: true,
-      });
-
-      const particleSystem = new THREE.Points(particles, particleMaterial);
-      scene.add(particleSystem);
-
-      // 音频分析（使用全局 AudioContext）
-      const ctx =
-        audioContextRef.current ||
-        new (window.AudioContext || (window as any).webkitAudioContext)();
-      if (!audioContextRef.current) {
-        audioContextRef.current = ctx;
-      }
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      // 加载音频
-      if (audioUrl) {
-        const audioElement = new Audio(audioUrl);
-        audioElement.loop = true;
-        audioElementRef.current = audioElement;
-        const source = ctx.createMediaElementSource(audioElement);
-        source.connect(analyser);
-        analyser.connect(ctx.destination);
-        // 若上下文被限制，先尝试恢复
-        if (ctx.state === "suspended") {
-          ctx.resume().catch(() => {});
-        }
-        if (!pause) {
-          const playPromise = audioElement.play();
-          if (playPromise && typeof playPromise.catch === "function") {
-            playPromise.catch(() => {
-              // 如果自动播放被阻止，后续任意点击会触发播放
-            });
-          }
-        }
-      }
-
-      // 动画循环
-      const animate = () => {
-        if (!pause) {
-          animationFrameRef.current = requestAnimationFrame(animate);
-
-          // 只在音频播放时更新粒子
-          if (audioElementRef.current && !audioElementRef.current.paused) {
-            analyser.getByteFrequencyData(dataArray);
-
-            const positions = particles.attributes.position.array;
-            for (let i = 0; i < particleCount; i++) {
-              const angle = i * (1 / 180) * Math.PI * 2;
-              const distance = Math.ceil(i / 180) * 0.005 * radius;
-              const audioValue = dataArray[Math.ceil(i / 180)] / 360;
-
-              positions[i * 3] = Math.cos(angle) * distance;
-              positions[i * 3 + 1] = -4 + audioValue;
-              positions[i * 3 + 2] = Math.sin(angle) * distance;
-
-              sizes[i] = 2 * (1 - distance / radius);
-            }
-
-            particles.attributes.position.needsUpdate = true;
-            particles.attributes.size.needsUpdate = true;
-          }
-
-          renderer.render(scene, camera);
-        }
-      };
-
-      animate();
-
-      // 清理函数
-      return () => {
-        window.removeEventListener("resize", handleResize);
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
-        }
-        if (audioElementRef.current) {
-          audioElementRef.current.pause();
-        }
-        renderer.dispose();
-        containerRef.current &&
-          containerRef.current.removeChild(renderer.domElement);
-        if (uploadedObjectUrlRef.current) {
-          URL.revokeObjectURL(uploadedObjectUrlRef.current);
-          uploadedObjectUrlRef.current = null;
-        }
-      };
-    }, [audioUrl]);
-
-    // 处理音乐播放/暂停
-    const handlePlayPause = () => {
-      if (audioElementRef.current) {
-        if (pause) {
-          audioElementRef.current.play();
+  // 从远端获取音乐列表数据
+  useEffect(() => {
+    const fetchMusicList = async () => {
+      try {
+        // 替换为实际的API地址
+        const response = await axios.get("./data.json");
+        if (response.data && Array.isArray(response.data)) {
+          setMusicList(response.data);
         } else {
-          audioElementRef.current.pause();
+          setMusicList(initMusicList);
         }
-        setPause(!pause);
+      } catch (error) {
+        console.error("获取音乐列表失败:", error);
+        // 设置默认音乐列表作为后备
+        setMusicList(initMusicList);
       }
     };
 
-    const musicList = [
-      { id: "1", name: "稻香", author: "周杰伦", src: "./music/daoxiang.mp3" },
-      { id: "2", name: "黑夜", author: "陈粒", src: "./music/heiye.mp3" },
-      { id: "3", name: "小半", author: "陈粒", src: "./music/xiaoban.mp3" },
-      {
-        id: "4",
-        name: "给电影人的情书",
-        author: "蔡琴",
-        src: "./music/geidianyingrendeqingshu.mp3",
-      },
-    ];
-    const [curMusic, setCurMusic] = useState("");
-    useEffect(() => {
-      if (!curMusic) return;
-      const curMusicSrc = musicList?.filter((i) => i.id === curMusic)[0].src;
-      if (curMusicSrc) {
-        setAudioUrl(curMusicSrc);
+    fetchMusicList();
+  }, []);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    // 初始化Three.js场景
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
+    camera.position.z = 11;
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000);
+    containerRef.current.appendChild(renderer.domElement);
+
+    // 创建粒子系统
+    const particleCount = 18000;
+    const particles = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+
+    // 初始化粒子位置和大小
+    const radius = 24;
+    for (let i = 0; i < particleCount; i++) {
+      const angle = i * (1 / 180) * Math.PI * 2;
+      const distance = Math.ceil(i / 180) * 0.005 * radius;
+
+      positions[i * 3] = Math.cos(angle) * distance;
+      positions[i * 3 + 1] = -4;
+      positions[i * 3 + 2] = Math.sin(angle) * distance;
+
+      sizes[i] = 2 * (1 - distance / radius);
+    }
+
+    particles.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    particles.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
+
+    const particleMaterial = new THREE.PointsMaterial({
+      color: 0xcccccc,
+      size: 0.01,
+      sizeAttenuation: true,
+    });
+
+    const particleSystem = new THREE.Points(particles, particleMaterial);
+    scene.add(particleSystem);
+
+    // 音频分析
+    const audioContext = new (window.AudioContext ||
+      window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    // 加载音频
+    if (audioUrl) {
+      const audioElement = new Audio(audioUrl);
+      audioElement.loop = true;
+
+      // 添加错误处理，当音频无法加载时显示提示
+      audioElement.addEventListener("error", () => {
+        setAlertMsg("未找到音频");
+        setLoading(false); // 加载失败时关闭加载状态
+
+        // 2秒后自动隐藏提示
+        setTimeout(() => {
+          setAlertMsg("");
+        }, 1000);
+      });
+
+      // 添加加载成功处理，清除错误信息
+      audioElement.addEventListener("loadeddata", () => {
+        setAlertMsg("");
+      });
+
+      // 添加播放开始事件监听器，当音频开始播放时关闭loading状态
+      audioElement.addEventListener("playing", () => {
+        setLoading(false);
+      });
+
+      audioElementRef.current = audioElement;
+      const source = audioContext.createMediaElementSource(audioElement);
+      source.connect(analyser);
+      analyser.connect(audioContext.destination);
+
+      if (!pause) {
+        audioElement.play();
       }
-    }, [curMusic]);
-    return (
+    }
+
+    // 动画循环
+    const animate = () => {
+      if (!pause) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+
+        // 只在音频播放时更新粒子
+        if (audioElementRef.current && !audioElementRef.current.paused) {
+          analyser.getByteFrequencyData(dataArray);
+
+          const positions = particles.attributes.position.array;
+          for (let i = 0; i < particleCount; i++) {
+            const angle = i * (1 / 180) * Math.PI * 2;
+            const distance = Math.ceil(i / 180) * 0.005 * radius;
+            const audioValue = dataArray[Math.ceil(i / 180)] / 360;
+
+            positions[i * 3] = Math.cos(angle) * distance;
+            positions[i * 3 + 1] = -4 + audioValue;
+            positions[i * 3 + 2] = Math.sin(angle) * distance;
+
+            sizes[i] = 2 * (1 - distance / radius);
+          }
+
+          particles.attributes.position.needsUpdate = true;
+          particles.attributes.size.needsUpdate = true;
+        }
+
+        renderer.render(scene, camera);
+      }
+    };
+
+    animate();
+
+    // 清理函数
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (audioElementRef.current) {
+        audioElementRef.current.pause();
+      }
+      audioContext.close();
+      renderer.dispose();
+      if (containerRef.current) {
+        containerRef.current.removeChild(renderer.domElement);
+      }
+    };
+  }, [audioUrl]);
+
+  // 处理音乐播放/暂停
+  const handlePlayPause = () => {
+    if (audioElementRef.current) {
+      if (pause) {
+        audioElementRef.current.play();
+      } else {
+        audioElementRef.current.pause();
+      }
+      setPause(!pause);
+    }
+  };
+
+  const [curMusic, setCurMusic] = useState("");
+  useEffect(() => {
+    const curMusicSrc = musicList?.filter((i) => i.id === curMusic)[0]?.src;
+    if (curMusicSrc) {
+      setAudioUrl(curMusicSrc);
+    }
+  }, [curMusic, musicList]); // 添加musicList作为依赖
+
+  const [uploadLoading, setUploadLoading] = useState<boolean>(false);
+  const [uploadAudioName, setUploadAudioName] = useState<string>("");
+  const [drag, setDrag] = useState<boolean>(false);
+  const handleChange = (e: any, file: any) => {
+    setUploadLoading(true);
+    e.preventDefault();
+    if (file) {
+      setLoading(true);
+      setCurMusic("");
+      setUploadAudioName(file.name);
+      let reader = new FileReader();
+      reader.readAsDataURL(file);
+      setAudioUrl(URL.createObjectURL(file));
+      setUploadLoading(false);
+      setDrag(false);
+    }
+  };
+
+  useEffect(() => console.log(loading), [loading]);
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100vw",
+        height: "100vh",
+        overflow: "hidden",
+      }}
+    >
       <div
-        style={{ width: "100vw", height: "100vh", overflow: "hidden" }}
+        style={{
+          position: "absolute",
+          display: "flex",
+          flexDirection: "column",
+          fontSize: "12px",
+          top: 24,
+          left: 24,
+          zIndex: 10,
+        }}
+      >
+        {musicList?.map((item) => (
+          <div
+            key={item.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              setCurMusic(item.id);
+              setLoading(true);
+            }}
+            style={{
+              color: curMusic === item.id ? "white" : "gray",
+              padding: "4px 0",
+              cursor: "pointer",
+            }}
+          >
+            {item.name} - {item.author}
+          </div>
+        ))}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          cursor: "pointer",
+        }}
         onClick={() => handlePlayPause()}
       >
         <div
           style={{
             position: "absolute",
-            top: 24,
-            left: 24,
-            zIndex: 10,
             display: "flex",
-            flexDirection: "column",
+            alignItems: "center",
+            gap: "8px",
+            color: "gray",
             fontSize: "12px",
-            fontWeight: "400",
+            whiteSpace: "nowrap",
+            top: "12px",
+            left: "50%",
+            transform: "translateX(-50%)",
           }}
+          onClick={(e) => e.stopPropagation()}
         >
-          {musicList?.map((item) => (
-            <div
-              key={item.id}
-              onClick={(e) => {
-                e.stopPropagation();
-                // 切换到内置音乐：清空输入框，取消上传URL，确保自动播放
-                setInput("");
-                setPause(false);
-                audioContextRef.current?.resume().catch(() => {});
-                if (uploadedObjectUrlRef.current) {
-                  URL.revokeObjectURL(uploadedObjectUrlRef.current);
-                  uploadedObjectUrlRef.current = null;
-                }
-                setCurMusic(item.id);
-              }}
-              style={{
-                padding: "16px 0",
-                cursor: "pointer",
-                color: curMusic === item.id ? "white" : "gray",
-              }}
-            >
-              {item.name} - {item.author}
-            </div>
-          ))}
+          <label
+            className="file-input"
+            onDragOver={(e: React.DragEvent<HTMLLabelElement>) => {
+              setDrag(true);
+              e.preventDefault();
+            }}
+            onDrop={(e: React.DragEvent<HTMLLabelElement>) =>
+              handleChange(e, e.dataTransfer.files[0])
+            }
+            onDragLeave={(e) => {
+              e.stopPropagation();
+              setDrag(false);
+            }}
+          >
+            {uploadLoading ? (
+              "上传中"
+            ) : (
+              <>
+                {drag ? (
+                  <>释放上传</>
+                ) : (
+                  <>{uploadAudioName || "点击此处上传音频文件"}</>
+                )}
+              </>
+            )}
+            <input
+              accept=".mp3"
+              type="file"
+              onChange={(e) => handleChange(e, e.target.files[0])}
+              style={{ backgroundColor: "transparent", border: "none" }}
+            ></input>
+          </label>
+          {/* 或 <input className="text-input" type='text' placeholder={'输入链接'} value={input} onChange={e => { setInput(e.target.value) }} />
+        <div className="check-button" onClick={() => {
+          if (input && input.includes('.mp3')) {
+            setAudioUrl(input);
+          }
+        }
+        }>
+          <svg width="16" height="16" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M43 11L16.875 37L5 25.1818" stroke="rgba(255,255,255,0.8)" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </div> 来上传音频*/}
         </div>
+      </div>
+      {loading && (
         <div
           style={{
             position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            cursor: "pointer",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            color: "rgba(255,255,255,0.6)",
           }}
         >
-          <AudioInput
-            input={input}
-            onInputChange={(e) => {
-              setInput(e.target.value);
-            }}
-            onSubmit={(url) => {
-              // 输入加载：取消内置选中并自动播放
-              setCurMusic("");
-              setPause(false);
-              audioContextRef.current?.resume().catch(() => {});
-              setAudioUrl(url);
-            }}
-            onUpload={(e) => {
-              const file = e.currentTarget.files && e.currentTarget.files[0];
-              if (!file) return;
-              if (uploadedObjectUrlRef.current) {
-                URL.revokeObjectURL(uploadedObjectUrlRef.current);
-                uploadedObjectUrlRef.current = null;
-              }
-              const objectUrl = URL.createObjectURL(file);
-              uploadedObjectUrlRef.current = objectUrl;
-              // 上传加载：取消内置选中并自动播放
-              setCurMusic("");
-              setPause(false);
-              audioContextRef.current?.resume().catch(() => {});
-              setAudioUrl(objectUrl);
-            }}
-          />
+          加载中...
         </div>
-        <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+      )}
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          color: "rgba(255,255,255,0.6)",
+          opacity: alertMsg ? 1 : 0,
+          transition: "opacity 0.2s linear",
+        }}
+      >
+        {alertMsg}
       </div>
-    );
+      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+    </div>
+  );
 };
 
-export default Home;
+export default AudioParticleVisualizer;
